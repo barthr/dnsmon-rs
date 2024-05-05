@@ -1,0 +1,11 @@
+[package]
+name = "dnsmon-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ctrlc = "3.4.4"
+libbpf-rs = "0.23.0"
+
+[build-dependencies]
+libbpf-cargo = "0.23.0"
