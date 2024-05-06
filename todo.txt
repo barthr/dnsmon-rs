@@ -1,0 +1,3 @@
+- Look at the response of DNS requests to see which IP address is resolved
+    * Should we do this on a packet level or on a syscall level?
+    * We can do this on a gethostbyname level

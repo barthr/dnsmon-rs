@@ -5,18 +5,26 @@ use std::{
         Arc,
     },
     thread::sleep,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use libbpf_rs::{
     skel::{OpenSkel, SkelBuilder},
-    Error, ErrorExt, TcHookBuilder, TC_INGRESS,
+    Error, ErrorExt, RingBufferBuilder, TcHookBuilder, TC_EGRESS,
 };
+use pnet::datalink;
 
 use crate::dns::DnsSkelBuilder;
 
 mod dns {
     include!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/bpf/dns.skel.rs"));
+}
+
+fn iface_name_to_index(name: &str) -> Option<u32> {
+    return datalink::interfaces()
+        .iter()
+        .find(|iface| iface.name == name)
+        .map(|iface| iface.index);
 }
 
 fn main() -> Result<(), Error> {
@@ -27,21 +35,45 @@ fn main() -> Result<(), Error> {
 
     let skel = open_skel.load().expect("Expected to load the DNS skeleton");
     let progs = skel.progs();
+    let maps = skel.maps();
+
+    /*     let mut maps = skel.maps_mut();
+    let blocklist_hostnames_map = maps.blocklist_hostnames();
+    blocklist_hostnames_map
+        .pin(Path::new("/sys/fs/bpf/blocklist_hostnames"))
+        .expect("Expected to pin map at blocklist_hostnames but it failed"); */
+
+    /*     let mut progs = skel.progs_mut();
+
+       let opts = UprobeOpts {
+           func_name: "getaddrinfo".to_string(),
+           ..Default::default()
+       };
+
+       let path = Path::new("/lib64/libc.so.6");
+
+       progs
+           .handle__monitor_getaddrinfo()
+           .attach_uprobe_with_opts(-1, path, 1, opts)
+           .expect("Failed to attach prog");
+    */
     // Set up and attach ingress TC hook
-    let mut ingress = TcHookBuilder::new(progs.dns().as_fd())
-        .ifindex(2)
+    //
+    let ifindex =
+        iface_name_to_index("enp0s13f0u1u6").expect("Expected interface name to have an index");
+
+    let mut egress = TcHookBuilder::new(progs.dns().as_fd())
+        .ifindex(ifindex.try_into().unwrap())
         .replace(true)
         .handle(1)
         .priority(1)
-        .hook(TC_INGRESS);
+        .hook(TC_EGRESS);
 
-    ingress
+    egress
         .create()
-        .context("Failed to create ingress TC qdisc")?;
+        .context("Failed to create egress TC qdisc")?;
 
-    ingress
-        .attach()
-        .context("Failed to attach ingress TC prog")?;
+    egress.attach().context("Failed to attach egress TC prog")?;
 
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
@@ -50,16 +82,39 @@ fn main() -> Result<(), Error> {
     })
     .expect("Failed to handle CTRL-C");
 
+    // Set up ringbuffer for listening to DNS hostnames
+    let mut rbuf_builder = RingBufferBuilder::new();
+    rbuf_builder
+        .add(&maps.dns_events(), on_receive_hostname)
+        .expect("Failed to add ringbuf");
+    let ringbuffer = rbuf_builder.build().expect("Failed to build ringbuffer");
+
     while running.load(Ordering::SeqCst) {
-        sleep(Duration::new(1, 0));
+        ringbuffer
+            .poll(Duration::from_millis(100))
+            .expect("Failed polling ringbuffer");
     }
 
-    if let Err(e) = ingress.detach() {
+    if let Err(e) = egress.detach() {
         eprintln!("Failed to detach prog: {e}");
     }
-    if let Err(e) = ingress.destroy() {
+    if let Err(e) = egress.destroy() {
         eprintln!("Failed to destroy TC hook: {e}");
     }
 
     Ok(())
+}
+
+fn on_receive_hostname(buffer: &[u8]) -> i32 {
+    match std::str::from_utf8(&buffer[3..]) {
+        Ok(s) => {
+            // Successfully converted to a string
+            println!("Received hostname: {}", s);
+        }
+        Err(e) => {
+            // Conversion failed due to invalid UTF-8 data
+            println!("Error: {}", e);
+        }
+    }
+    return 0;
 }

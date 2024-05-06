@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        "*.heex": "html-eex",
+        "*.css": "tailwindcss",
+        "*.numscript": "numscript",
+        "bpf_endian.h": "c",
+        "vmlinux.h": "c",
+        "limits": "c"
+    }
+}

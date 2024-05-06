@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 ctrlc = "3.4.4"
 libbpf-rs = "0.23.0"
+pnet = "0.34.0"
 
 [build-dependencies]
 libbpf-cargo = "0.23.0"
