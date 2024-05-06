@@ -182,6 +182,7 @@ dependencies = [
 name = "dnsmon-rs"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "ctrlc",
  "libbpf-cargo",
  "libbpf-rs",

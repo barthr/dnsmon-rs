@@ -4,10 +4,10 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    thread::sleep,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
+use clap::{arg, command, Parser};
 use libbpf_rs::{
     skel::{OpenSkel, SkelBuilder},
     Error, ErrorExt, RingBufferBuilder, TcHookBuilder, TC_EGRESS,
@@ -27,7 +27,17 @@ fn iface_name_to_index(name: &str) -> Option<u32> {
         .map(|iface| iface.index);
 }
 
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Name of the interface to listen on
+    #[arg(short, long)]
+    iface: String,
+}
+
 fn main() -> Result<(), Error> {
+    let args = Args::parse();
+
     let mut skel_builder = DnsSkelBuilder::default();
     skel_builder.obj_builder.debug(true);
 
@@ -38,7 +48,9 @@ fn main() -> Result<(), Error> {
     let maps = skel.maps();
 
     let ifindex =
-        iface_name_to_index("enp0s13f0u1u6").expect("Expected interface name to have an index");
+        iface_name_to_index(&args.iface).expect("Expected interface name to have an index");
+
+    println!("Adding TC hook to iface {}", &args.iface);
 
     let mut egress = TcHookBuilder::new(progs.dns().as_fd())
         .ifindex(ifindex.try_into().unwrap())
