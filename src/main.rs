@@ -37,28 +37,6 @@ fn main() -> Result<(), Error> {
     let progs = skel.progs();
     let maps = skel.maps();
 
-    /*     let mut maps = skel.maps_mut();
-    let blocklist_hostnames_map = maps.blocklist_hostnames();
-    blocklist_hostnames_map
-        .pin(Path::new("/sys/fs/bpf/blocklist_hostnames"))
-        .expect("Expected to pin map at blocklist_hostnames but it failed"); */
-
-    /*     let mut progs = skel.progs_mut();
-
-       let opts = UprobeOpts {
-           func_name: "getaddrinfo".to_string(),
-           ..Default::default()
-       };
-
-       let path = Path::new("/lib64/libc.so.6");
-
-       progs
-           .handle__monitor_getaddrinfo()
-           .attach_uprobe_with_opts(-1, path, 1, opts)
-           .expect("Failed to attach prog");
-    */
-    // Set up and attach ingress TC hook
-    //
     let ifindex =
         iface_name_to_index("enp0s13f0u1u6").expect("Expected interface name to have an index");
 
