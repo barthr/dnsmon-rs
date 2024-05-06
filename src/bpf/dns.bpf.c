@@ -22,6 +22,20 @@ char LICENSE[] SEC("license") = "GPL";
         return -1;                                              \
     }
 
+static inline __u64 fnv1a_64(const char* data, __u32 len)
+{
+    const __u64 FNV_offset_basis = 14695981039346656037ULL;
+    const __u64 FNV_prime = 1099511628211ULL;
+    __u64 hash = FNV_offset_basis;
+
+    for (__u64 i = 0; i < len; ++i) {
+        hash ^= data[i];
+        hash *= FNV_prime;
+    }
+
+    return hash;
+}
+
 struct dnshdr {
     __be16 id;
     __u8 qr : 1; // QR (Query/Response) flag
@@ -51,7 +65,7 @@ typedef struct {
     char hostname[256];
 } dns_event;
 
-static int _parse_dns_query(cursor* cursor, dns_event* ev)
+static __u32 _parse_dnsq_hostname(cursor* cursor, dns_event* ev)
 {
     check_packet_boundary(1);
     __u32 n_chars = *(char*)(cursor->pos++);
@@ -60,7 +74,7 @@ static int _parse_dns_query(cursor* cursor, dns_event* ev)
     for (__u32 i = 0; i < MAX_HOSTNAME_LEN; i++) {
         check_packet_boundary(1);
         if (*(char*)(cursor->pos) == 0) {
-            break;
+            return i;
         }
 
         char ch = *(char*)(cursor->pos++);
@@ -72,8 +86,7 @@ static int _parse_dns_query(cursor* cursor, dns_event* ev)
             ev->hostname[i] = ch;
         }
     }
-
-    return 0;
+    return -1;
 }
 
 SEC("tc")
@@ -125,17 +138,27 @@ int dns(struct __sk_buff* skb)
 
     dns_event ev = { .pid = 1 };
 
-    if (_parse_dns_query(&cursor, &ev) != 0) {
+    __u32 hostname_length = _parse_dnsq_hostname(&cursor, &ev);
+    if (hostname_length == -1) {
         return TC_PASS;
     };
 
     // We only want to send the DNS event if we actually match
     // with a item in the blocklist
     // For now we always send it
-    debug_bpf_printk("Received DNS packet with hostname %s!", ev.hostname);
+    // __u64 err = bpf_map_peek_elem(&blocklist_hostnames, &ev.hostname);
+    // if  (err) {
+    //     debug_bpf_printk("Element [%s] not found in blocklist", ev.hostname);
+    // } else {
+    char test[3] = { 1, 1, 1 };
+    const __u64 hash = fnv1a_64(&test, 3); // Seed 0
+                                           //
+    debug_bpf_printk("hash of hostname: %llu", hash);
     long result = bpf_ringbuf_output(&dns_events, &ev, sizeof(ev), 0);
     if (result < 0) {
         debug_bpf_printk("error: Sending hostname to user space %s!", ev.hostname);
     }
+
+    debug_bpf_printk("Received DNS packet with hostname %s!", ev.hostname);
     return TC_PASS;
 }

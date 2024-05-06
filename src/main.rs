@@ -10,7 +10,7 @@ use std::{
 use clap::{arg, command, Parser};
 use libbpf_rs::{
     skel::{OpenSkel, SkelBuilder},
-    Error, ErrorExt, RingBufferBuilder, TcHookBuilder, TC_EGRESS,
+    Error, ErrorExt, MapFlags, RingBufferBuilder, TcHookBuilder, TC_EGRESS,
 };
 use pnet::datalink;
 
@@ -35,6 +35,18 @@ struct Args {
     iface: String,
 }
 
+fn fnv1a_64(data: &[u8]) -> u64 {
+    const FNV_OFFSET_BASIS: u64 = 14_695_981_039_346_656_037;
+    const FNV_PRIME: u64 = 1_099_511_628_211;
+
+    let mut hash = FNV_OFFSET_BASIS;
+    for ele in data {
+        hash ^= u64::from(*ele);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
+}
+
 fn main() -> Result<(), Error> {
     let args = Args::parse();
 
@@ -50,6 +62,16 @@ fn main() -> Result<(), Error> {
     let ifindex =
         iface_name_to_index(&args.iface).expect("Expected interface name to have an index");
 
+    println!("Hash {}", fnv1a_64(&[1, 1, 1]));
+
+    /*     maps.blocklist_hostnames()
+           .update(
+               &[115, 116, 101, 115, 116, 46, 98, 46, 100, 101, 118, 0], // stest.b.dev (with null terminator)
+               &[1],
+               MapFlags::ANY,
+           )
+           .expect("Expected to add record to blocklist hostnames");
+    */
     println!("Adding TC hook to iface {}", &args.iface);
 
     let mut egress = TcHookBuilder::new(progs.dns().as_fd())
@@ -80,9 +102,9 @@ fn main() -> Result<(), Error> {
     let ringbuffer = rbuf_builder.build().expect("Failed to build ringbuffer");
 
     while running.load(Ordering::SeqCst) {
-        ringbuffer
-            .poll(Duration::from_millis(100))
-            .expect("Failed polling ringbuffer");
+        if let Err(e) = ringbuffer.poll(Duration::from_millis(100)) {
+            eprintln!("Failed polling ringbuffer: {e}")
+        }
     }
 
     if let Err(e) = egress.detach() {
@@ -96,6 +118,7 @@ fn main() -> Result<(), Error> {
 }
 
 fn on_receive_hostname(buffer: &[u8]) -> i32 {
+    // The layout is as follows: 4 bytes for the pid and the remaining 255 bytes for the hostname
     match std::str::from_utf8(&buffer[3..]) {
         Ok(s) => {
             // Successfully converted to a string
