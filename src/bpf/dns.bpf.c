@@ -23,19 +23,19 @@ char LICENSE[] SEC("license") = "GPL";
     }
 
 struct dnshdr {
-    __be16 id; // An identifier assigned by the program that generates any kind of query.
+    __be16 id;
     __u8 qr : 1; // QR (Query/Response) flag
-    __u8 opcode : 4; // Opcode field
-    __u8 aa : 1; // AA (Authoritative Answer) flag
-    __u8 tc : 1; // TC (Truncation) flag
-    __u8 rd : 1; // RD (Recursion Desired) flag
-    __u8 ra : 1; // RA (Recursion Available) flag
-    __u8 z : 3; // Reserved (Z) field
-    __u8 rcode : 4; // RCODE (Response Code) field
+    __u8 opcode : 4;
+    __u8 aa : 1;
+    __u8 tc : 1;
+    __u8 rd : 1;
+    __u8 ra : 1;
+    __u8 z : 3;
+    __u8 rcode : 4;
     __be16 qdcount; // The number of entries in the question section.
-    __be16 ancount; // The number of resource records in the answer section.
-    __be16 nscount; // The number of name server resource records in the authority records section.
-    __be16 arcount; // The number of resource records in the additional records section.
+    __be16 ancount;
+    __be16 nscount;
+    __be16 arcount;
 } __attribute__((packed));
 
 PARSE_FUNC_DECLARATION(dnshdr)
