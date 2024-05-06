@@ -60,6 +60,14 @@ struct {
     __uint(pinning, LIBBPF_PIN_BY_NAME);
 } dns_events SEC(".maps");
 
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __type(key, __u64);
+    __type(value, __u64);
+    __uint(max_entries, 1 << 9);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
+} blocklist_hostnames SEC("maps");
+
 typedef struct {
     __u32 pid;
     char hostname[256];
@@ -153,6 +161,11 @@ int dns(struct __sk_buff* skb)
     char test[3] = { 1, 1, 1 };
     const __u64 hash = fnv1a_64(&test, 3); // Seed 0
                                            //
+    void* record = bpf_map_lookup_elem(&blocklist_hostnames, &hash);
+    if (record != NULL) {
+        debug_bpf_printk("Found malicious hostname!!");
+    }
+    //
     debug_bpf_printk("hash of hostname: %llu", hash);
     long result = bpf_ringbuf_output(&dns_events, &ev, sizeof(ev), 0);
     if (result < 0) {

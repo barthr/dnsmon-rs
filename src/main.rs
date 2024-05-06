@@ -64,14 +64,10 @@ fn main() -> Result<(), Error> {
 
     println!("Hash {}", fnv1a_64(&[1, 1, 1]));
 
-    /*     maps.blocklist_hostnames()
-           .update(
-               &[115, 116, 101, 115, 116, 46, 98, 46, 100, 101, 118, 0], // stest.b.dev (with null terminator)
-               &[1],
-               MapFlags::ANY,
-           )
-           .expect("Expected to add record to blocklist hostnames");
-    */
+    maps.blocklist_hostnames()
+        .update(fnv1a_64(&[1, 1, 1]), MapFlags::ANY)
+        .expect("Expected to add record to blocklist hostnames");
+
     println!("Adding TC hook to iface {}", &args.iface);
 
     let mut egress = TcHookBuilder::new(progs.dns().as_fd())
