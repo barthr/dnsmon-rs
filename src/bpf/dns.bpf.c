@@ -95,6 +95,10 @@ int dns(struct __sk_buff* skb)
         return TC_PASS;
     }
 
+    if (ip->protocol != IPPROTO_UDP) {
+        return TC_PASS;
+    }
+
     struct udphdr* udp;
     if (!(udp = parse_udphdr(&cursor))) {
         return TC_PASS;
