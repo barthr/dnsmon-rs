@@ -22,14 +22,14 @@ char LICENSE[] SEC("license") = "GPL";
         return -1;                                              \
     }
 
-static inline __u64 fnv1a_64(const char* data, __u32 len)
+static inline __u32 fnv1a_32(const char data[255], __u32 len)
 {
-    const __u64 FNV_offset_basis = 14695981039346656037ULL;
-    const __u64 FNV_prime = 1099511628211ULL;
-    __u64 hash = FNV_offset_basis;
+    const __u32 FNV_offset_basis = 0x811C9DC5;
+    const __u32 FNV_prime = 0x01000193;
+    __u32 hash = FNV_offset_basis;
 
-    for (__u64 i = 0; i < len; ++i) {
-        hash ^= data[i];
+    for (__u32 i = 0; i < len; ++i) {
+        hash ^= (unsigned char)data[i];
         hash *= FNV_prime;
     }
 
@@ -61,12 +61,11 @@ struct {
 } dns_events SEC(".maps");
 
 struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __type(key, __u64);
-    __type(value, __u64);
-    __uint(max_entries, 1 << 9);
+    __uint(type, BPF_MAP_TYPE_BLOOM_FILTER);
+    __type(value, u32);
+    __uint(max_entries, 1000);
     __uint(pinning, LIBBPF_PIN_BY_NAME);
-} blocklist_hostnames SEC("maps");
+} bf_blocklist_hostnames SEC(".maps");
 
 typedef struct {
     __u32 pid;
@@ -158,11 +157,9 @@ int dns(struct __sk_buff* skb)
     // if  (err) {
     //     debug_bpf_printk("Element [%s] not found in blocklist", ev.hostname);
     // } else {
-    char test[3] = { 1, 1, 1 };
-    const __u64 hash = fnv1a_64(&test, 3); // Seed 0
-                                           //
-    void* record = bpf_map_lookup_elem(&blocklist_hostnames, &hash);
-    if (record != NULL) {
+    const __u32 hash = fnv1a_32(ev.hostname, hostname_length);
+    __u64 hostname_found = bpf_map_peek_elem(&bf_blocklist_hostnames, &hash);
+    if (hostname_found == 0) {
         debug_bpf_printk("Found malicious hostname!!");
     }
     //

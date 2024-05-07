@@ -35,16 +35,20 @@ struct Args {
     iface: String,
 }
 
-fn fnv1a_64(data: &[u8]) -> u64 {
-    const FNV_OFFSET_BASIS: u64 = 14_695_981_039_346_656_037;
-    const FNV_PRIME: u64 = 1_099_511_628_211;
+fn fnv1a_32(data: &[u8]) -> u32 {
+    const FNV_OFFSET_BASIS: u32 = 0x811C9DC5;
+    const FNV_PRIME: u32 = 0x01000193;
 
     let mut hash = FNV_OFFSET_BASIS;
     for ele in data {
-        hash ^= u64::from(*ele);
+        hash ^= u32::from(*ele);
         hash = hash.wrapping_mul(FNV_PRIME);
     }
     hash
+}
+
+fn hash_hostname(hostname: &str) -> [u8; 4] {
+    fnv1a_32(hostname.as_bytes()).to_le_bytes()
 }
 
 fn main() -> Result<(), Error> {
@@ -62,10 +66,10 @@ fn main() -> Result<(), Error> {
     let ifindex =
         iface_name_to_index(&args.iface).expect("Expected interface name to have an index");
 
-    println!("Hash {}", fnv1a_64(&[1, 1, 1]));
+    println!("Hash {}", fnv1a_32(&[1, 1, 1]));
 
-    maps.blocklist_hostnames()
-        .update(fnv1a_64(&[1, 1, 1]), MapFlags::ANY)
+    maps.bf_blocklist_hostnames()
+        .update(&[], &hash_hostname("uptime.bfkr.dev"), MapFlags::ANY)
         .expect("Expected to add record to blocklist hostnames");
 
     println!("Adding TC hook to iface {}", &args.iface);

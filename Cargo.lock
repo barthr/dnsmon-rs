@@ -185,7 +185,7 @@ dependencies = [
  "clap",
  "ctrlc",
  "libbpf-cargo",
- "libbpf-rs",
+ "libbpf-rs 0.23.0 (git+https://github.com/barthr/libbpf-rs.git?branch=master)",
  "pnet",
 ]
 
@@ -275,7 +275,7 @@ dependencies = [
  "anyhow",
  "cargo_metadata",
  "clap",
- "libbpf-rs",
+ "libbpf-rs 0.23.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "libbpf-sys",
  "memmap2",
  "num_enum",
@@ -293,6 +293,20 @@ name = "libbpf-rs"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e289c054443e63d3f09d4ee53044c4311166f3df31b7835a29995a6c3b03c18d"
+dependencies = [
+ "bitflags",
+ "libbpf-sys",
+ "libc",
+ "num_enum",
+ "strum_macros",
+ "thiserror",
+ "vsprintf",
+]
+
+[[package]]
+name = "libbpf-rs"
+version = "0.23.0"
+source = "git+https://github.com/barthr/libbpf-rs.git?branch=master#cf3cf7a69b5e605732734c20c1f070479f43d379"
 dependencies = [
  "bitflags",
  "libbpf-sys",

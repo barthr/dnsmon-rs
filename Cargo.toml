@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.5.4", features = ["derive"] }
 ctrlc = "3.4.4"
-libbpf-rs = "0.23.0"
+libbpf-rs = { git = "https://github.com/barthr/libbpf-rs.git", branch = "master" }
 pnet = "0.34.0"
 
 [build-dependencies]
