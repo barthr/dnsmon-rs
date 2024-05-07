@@ -134,8 +134,6 @@ int dns(struct __sk_buff* skb)
         return TC_PASS;
     }
 
-    // bpf_get_current_pid_tgid() >> 32
-
     dns_event ev = { .pid = 1 };
 
     __u32 hash = 0;
@@ -144,25 +142,13 @@ int dns(struct __sk_buff* skb)
         return TC_PASS;
     };
 
-    // We only want to send the DNS event if we actually match
-    // with a item in the blocklist
-    // For now we always send it
-    // __u64 err = bpf_map_peek_elem(&blocklist_hostnames, &ev.hostname);
-    // if  (err) {
-    //     debug_bpf_printk("Element [%s] not found in blocklist", ev.hostname);
-    // } else {
-    /*     char hname[255] = "uptime.bfkr.dev";
-        const __u32 hhash = fnv1a_32(hname, 15); */
-    debug_bpf_printk("Hash %u", hash);
-    if (bpf_map_peek_elem(&bl_hostnames, &hash) == 0) {
-        debug_bpf_printk("Found potential malicious hostname %s", ev.hostname);
+    if (bpf_map_peek_elem(&bl_hostnames, &hash) != 0) {
+        return TC_PASS;
     }
 
-    long result = bpf_ringbuf_output(&dns_events, &ev, sizeof(ev), 0);
-    if (result < 0) {
+    if (bpf_ringbuf_output(&dns_events, &ev, sizeof(ev), 0) < 0) {
         debug_bpf_printk("error: Sending hostname to user space %s!", ev.hostname);
     }
 
-    debug_bpf_printk("Received DNS packet with hostname %s!", ev.hostname);
     return TC_PASS;
 }
