@@ -62,14 +62,17 @@ fn main() -> Result<(), Error> {
     let skel = open_skel.load().expect("Expected to load the DNS skeleton");
     let progs = skel.progs();
     let maps = skel.maps();
+    let blocklist = maps.bl_hostnames();
 
     let ifindex =
         iface_name_to_index(&args.iface).expect("Expected interface name to have an index");
+    
+    let hostname = "test.bfkr.dev";
 
-    println!("Hash {}", fnv1a_32(&[1, 1, 1]));
+    println!("Hash {}", fnv1a_32(hostname.as_bytes()));
 
-    maps.bf_blocklist_hostnames()
-        .update(&[], &hash_hostname("uptime.bfkr.dev"), MapFlags::ANY)
+    blocklist
+        .update(&[], &hash_hostname(&hostname), MapFlags::ANY)
         .expect("Expected to add record to blocklist hostnames");
 
     println!("Adding TC hook to iface {}", &args.iface);

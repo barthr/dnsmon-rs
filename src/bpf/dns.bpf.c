@@ -22,20 +22,6 @@ char LICENSE[] SEC("license") = "GPL";
         return -1;                                              \
     }
 
-static inline __u32 fnv1a_32(const char data[255], __u32 len)
-{
-    const __u32 FNV_offset_basis = 0x811C9DC5;
-    const __u32 FNV_prime = 0x01000193;
-    __u32 hash = FNV_offset_basis;
-
-    for (__u32 i = 0; i < len; ++i) {
-        hash ^= (unsigned char)data[i];
-        hash *= FNV_prime;
-    }
-
-    return hash;
-}
-
 struct dnshdr {
     __be16 id;
     __u8 qr : 1; // QR (Query/Response) flag
@@ -63,23 +49,26 @@ struct {
 struct {
     __uint(type, BPF_MAP_TYPE_BLOOM_FILTER);
     __type(value, u32);
-    __uint(max_entries, 1000);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);
-} bf_blocklist_hostnames SEC(".maps");
+    __uint(max_entries, 1000000);
+} bl_hostnames SEC(".maps");
 
 typedef struct {
     __u32 pid;
     char hostname[256];
 } dns_event;
 
-static __u32 _parse_dnsq_hostname(cursor* cursor, dns_event* ev)
+static __u32 _parse_dnsq_hostname(cursor* cursor, dns_event* ev, __u32* hash)
 {
     check_packet_boundary(1);
-    __u32 n_chars = *(char*)(cursor->pos++);
+    const __u32 FNV_offset_basis = 0x811C9DC5;
+    const __u32 FNV_prime = 0x01000193;
+    *hash = FNV_offset_basis;
     // Weird loop to parse dns like 4test4test0
     // This has been a lot of fighting with the verifier since it requires bounded loops
+    __u32 n_chars = *(char*)(cursor->pos++);
     for (__u32 i = 0; i < MAX_HOSTNAME_LEN; i++) {
         check_packet_boundary(1);
+
         if (*(char*)(cursor->pos) == 0) {
             return i;
         }
@@ -88,9 +77,13 @@ static __u32 _parse_dnsq_hostname(cursor* cursor, dns_event* ev)
         if (n_chars == 0) {
             n_chars = ch;
             ev->hostname[i] = '.';
+            *hash ^= (unsigned char)'.';
+            *hash *= FNV_prime;
         } else {
             n_chars--;
             ev->hostname[i] = ch;
+            *hash ^= (unsigned char)ch;
+            *hash *= FNV_prime;
         }
     }
     return -1;
@@ -145,7 +138,8 @@ int dns(struct __sk_buff* skb)
 
     dns_event ev = { .pid = 1 };
 
-    __u32 hostname_length = _parse_dnsq_hostname(&cursor, &ev);
+    __u32 hash = 0;
+    __u32 hostname_length = _parse_dnsq_hostname(&cursor, &ev, &hash);
     if (hostname_length == -1) {
         return TC_PASS;
     };
@@ -157,13 +151,13 @@ int dns(struct __sk_buff* skb)
     // if  (err) {
     //     debug_bpf_printk("Element [%s] not found in blocklist", ev.hostname);
     // } else {
-    const __u32 hash = fnv1a_32(ev.hostname, hostname_length);
-    __u64 hostname_found = bpf_map_peek_elem(&bf_blocklist_hostnames, &hash);
-    if (hostname_found == 0) {
-        debug_bpf_printk("Found malicious hostname!!");
+    /*     char hname[255] = "uptime.bfkr.dev";
+        const __u32 hhash = fnv1a_32(hname, 15); */
+    debug_bpf_printk("Hash %u", hash);
+    if (bpf_map_peek_elem(&bl_hostnames, &hash) == 0) {
+        debug_bpf_printk("Found potential malicious hostname %s", ev.hostname);
     }
-    //
-    debug_bpf_printk("hash of hostname: %llu", hash);
+
     long result = bpf_ringbuf_output(&dns_events, &ev, sizeof(ev), 0);
     if (result < 0) {
         debug_bpf_printk("error: Sending hostname to user space %s!", ev.hostname);
