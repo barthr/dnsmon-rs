@@ -1,6 +1,7 @@
 #include "vmlinux.h"
 
 #include "cursor.h"
+#include "log.h"
 #include "parsers.c"
 #include <bpf/bpf_endian.h>
 #include <bpf/bpf_helpers.h>
@@ -147,7 +148,7 @@ int dns(struct __sk_buff* skb)
     }
 
     if (bpf_ringbuf_output(&dns_events, &ev, sizeof(ev), 0) < 0) {
-        debug_bpf_printk("error: Sending hostname to user space %s!", ev.hostname);
+        log_fmt("Failed sending hostname to user space %s!", ev.hostname);
     }
 
     return TC_PASS;

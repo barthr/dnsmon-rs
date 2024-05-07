@@ -66,7 +66,7 @@ fn main() -> Result<(), Error> {
 
     let ifindex =
         iface_name_to_index(&args.iface).expect("Expected interface name to have an index");
-    
+
     let hostname = "test.bfkr.dev";
 
     println!("Hash {}", fnv1a_32(hostname.as_bytes()));
@@ -104,7 +104,16 @@ fn main() -> Result<(), Error> {
         .expect("Failed to add ringbuf");
     let ringbuffer = rbuf_builder.build().expect("Failed to build ringbuffer");
 
+    let mut log_buffer = RingBufferBuilder::new();
+    log_buffer
+        .add(&maps.log_output(), log_message)
+        .expect("Failed to add ringbuf");
+    let log_ringbuffer = log_buffer.build().expect("Failed to build ringbuffer");
+
     while running.load(Ordering::SeqCst) {
+        if let Err(e) = log_ringbuffer.poll(Duration::from_millis(50)) {
+            eprintln!("Failed polling log buffer: {e}")
+        }
         if let Err(e) = ringbuffer.poll(Duration::from_millis(100)) {
             eprintln!("Failed polling ringbuffer: {e}")
         }
@@ -120,12 +129,26 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
+fn log_message(buffer: &[u8]) -> i32 {
+    match std::str::from_utf8(&buffer) {
+        Ok(s) => {
+            // Successfully converted to a string
+            println!("[dataplane] {}", s);
+        }
+        Err(e) => {
+            // Conversion failed due to invalid UTF-8 data
+            println!("Error: {}", e);
+        }
+    }
+    0
+}
+
 fn on_receive_hostname(buffer: &[u8]) -> i32 {
     // The layout is as follows: 4 bytes for the pid and the remaining 255 bytes for the hostname
     match std::str::from_utf8(&buffer[3..]) {
         Ok(s) => {
             // Successfully converted to a string
-            println!("Received hostname: {}", s);
+            println!("[dataplane] received hostname from dataplane: {}", s);
         }
         Err(e) => {
             // Conversion failed due to invalid UTF-8 data
