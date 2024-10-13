@@ -4,10 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.83"
 clap = { version = "4.5.4", features = ["derive"] }
+crossterm = "0.27.0"
 ctrlc = "3.4.4"
-libbpf-rs = { git = "https://github.com/barthr/libbpf-rs.git", branch = "master" }
+libbpf-rs = "0.23.1"
+once_cell = "1.19.0"
 pnet = "0.34.0"
+ratatui = { version = "0.26.3", features = ["all-widgets"] }
+regex = "1.10.4"
+reqwest = { version = "0.12.4", features = ["blocking"] }
 
 [build-dependencies]
-libbpf-cargo = "0.23.0"
+libbpf-cargo = "0.23.1"

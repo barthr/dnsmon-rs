@@ -8,12 +8,12 @@ pub struct NetInterface {
 
 impl NetInterface {
     pub fn from_name(name: &str) -> Option<Self> {
-        return datalink::interfaces()
+        datalink::interfaces()
             .iter()
             .find(|iface| iface.name == name)
             .map(|iface| NetInterface {
                 index: iface.index,
                 name: iface.name.to_string(),
-            });
+            })
     }
 }

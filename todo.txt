@@ -1,3 +1,36 @@
 - Look at the response of DNS requests to see which IP address is resolved
     * Should we do this on a packet level or on a syscall level?
     * We can do this on a gethostbyname level
+    
+static void log_fmt(l_level level, char fmt[], ...)
+{
+    log_message* log_msg = (log_message*)bpf_ringbuf_reserve(&log_output, sizeof(log_message), 0);
+    if (!log_msg) {
+        bpf_printk("Failed to reserve ring buffer for log message\n");
+        return;
+    }
+
+    log_msg->level = level;
+    va_list args;
+    va_start(args, fmt);
+    BPF_SNPRINTF(log_msg->message, LOG_BUF_CAPACITY, "format %s", args);
+    va_end(args);
+
+    bpf_ringbuf_submit(log_msg, 0);
+}
+
+static void log_msg(l_level level, char* msg)
+{
+
+    log_message* log_msg = (log_message*)bpf_ringbuf_reserve(&log_output, sizeof(log_message), 0);
+    if (!log_msg) {
+        bpf_printk("Failed to reserve ring buffer for log message\n");
+        return;
+    }
+
+    log_msg->level = level;
+    // Ensure we do not copy more than LOG_BUF_CAPACITY - safer to use the min between string length and LOG_BUF_CAPACITY
+    __builtin_memcpy(log_msg->message, msg, LOG_BUF_CAPACITY);
+
+    bpf_ringbuf_submit(log_msg, 0);
+}

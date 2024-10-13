@@ -1,30 +1,29 @@
+mod blocklist;
+mod hash;
+mod net;
+
 use std::{
     os::fd::AsFd,
+    path::Path,
     sync::{
         atomic::{AtomicBool, Ordering},
+        mpsc::Sender,
         Arc,
     },
+    thread,
     time::Duration,
 };
 
 use clap::{arg, command, Parser};
 use libbpf_rs::{
     skel::{OpenSkel, SkelBuilder},
-    Error, ErrorExt, MapFlags, RingBufferBuilder, TcHookBuilder, TC_EGRESS,
+    Error, ErrorExt, RingBufferBuilder, TcHookBuilder, TC_EGRESS,
 };
-use pnet::datalink;
 
-use crate::dns::DnsSkelBuilder;
+use crate::{blocklist::Blocklist, dns::DnsSkelBuilder, net::NetInterface};
 
 mod dns {
     include!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/bpf/dns.skel.rs"));
-}
-
-fn iface_name_to_index(name: &str) -> Option<u32> {
-    return datalink::interfaces()
-        .iter()
-        .find(|iface| iface.name == name)
-        .map(|iface| iface.index);
 }
 
 #[derive(Parser, Debug)]
@@ -33,26 +32,18 @@ struct Args {
     /// Name of the interface to listen on
     #[arg(short, long)]
     iface: String,
-}
 
-fn fnv1a_32(data: &[u8]) -> u32 {
-    const FNV_OFFSET_BASIS: u32 = 0x811C9DC5;
-    const FNV_PRIME: u32 = 0x01000193;
+    #[arg(long)]
+    files: Vec<String>,
 
-    let mut hash = FNV_OFFSET_BASIS;
-    for ele in data {
-        hash ^= u32::from(*ele);
-        hash = hash.wrapping_mul(FNV_PRIME);
-    }
-    hash
-}
-
-fn hash_hostname(hostname: &str) -> [u8; 4] {
-    fnv1a_32(hostname.as_bytes()).to_le_bytes()
+    #[arg(long)]
+    urls: Vec<String>,
 }
 
 fn main() -> Result<(), Error> {
     let args = Args::parse();
+
+    println!("Files {:?}", args.files);
 
     let mut skel_builder = DnsSkelBuilder::default();
     skel_builder.obj_builder.debug(true);
@@ -62,23 +53,40 @@ fn main() -> Result<(), Error> {
     let skel = open_skel.load().expect("Expected to load the DNS skeleton");
     let progs = skel.progs();
     let maps = skel.maps();
-    let blocklist = maps.bl_hostnames();
+    let blocklist_dp = maps.bl_hostnames();
 
-    let ifindex =
-        iface_name_to_index(&args.iface).expect("Expected interface name to have an index");
+    let iface = NetInterface::from_name(&args.iface)
+        .expect(&format!("Expected interface {} to be present", args.iface));
 
-    let hostname = "test.bfkr.dev";
+    let _file_blocklists: Result<Vec<Blocklist>, std::io::Error> = args
+        .files
+        .iter()
+        .map(Path::new)
+        .map(Blocklist::from_file)
+        .collect();
 
-    println!("Hash {}", fnv1a_32(hostname.as_bytes()));
+    let fp = Path::new("./blocklist.txt");
+    let blocklist = Blocklist::from_file(fp)
+        .map_err(|err| err.with_context(|| format!("for path {}", fp.display())))
+        .expect("Expected blocklist to be loaded from file");
+
+    // bl.match_hostname("test");
+    //
+    // let hostname =
+    //     BlockRule::parse("test.bfkr.dev").expect("Domain name test.bkfr.dev is not valid");
 
     blocklist
-        .update(&[], &hash_hostname(&hostname), MapFlags::ANY)
-        .expect("Expected to add record to blocklist hostnames");
+        .add_to_dataplane(blocklist_dp)
+        .expect("Expected to add record to dataplane");
 
+    /*     blocklist
+           .update(&[], &hash_hostname(&hostname), MapFlags::ANY)
+           .expect("Expected to add record to blocklist hostnames");
+    */
     println!("Adding TC hook to iface {}", &args.iface);
 
     let mut egress = TcHookBuilder::new(progs.dns().as_fd())
-        .ifindex(ifindex.try_into().unwrap())
+        .ifindex(iface.index.try_into().unwrap())
         .replace(true)
         .handle(1)
         .priority(1)
@@ -97,10 +105,12 @@ fn main() -> Result<(), Error> {
     })
     .expect("Failed to handle CTRL-C");
 
+    let (tx, rx) = std::sync::mpsc::channel();
+
     // Set up ringbuffer for listening to DNS hostnames
     let mut rbuf_builder = RingBufferBuilder::new();
     rbuf_builder
-        .add(&maps.dns_events(), on_receive_hostname)
+        .add(&maps.dns_events(), on_receive_hostname(tx))
         .expect("Failed to add ringbuf");
     let ringbuffer = rbuf_builder.build().expect("Failed to build ringbuffer");
 
@@ -114,6 +124,7 @@ fn main() -> Result<(), Error> {
         if let Err(e) = log_ringbuffer.poll(Duration::from_millis(50)) {
             eprintln!("Failed polling log buffer: {e}")
         }
+        // let received_hostname = rx.recv_timeout(Duration::from_millis(50));
         if let Err(e) = ringbuffer.poll(Duration::from_millis(100)) {
             eprintln!("Failed polling ringbuffer: {e}")
         }
@@ -143,17 +154,23 @@ fn log_message(buffer: &[u8]) -> i32 {
     0
 }
 
-fn on_receive_hostname(buffer: &[u8]) -> i32 {
-    // The layout is as follows: 4 bytes for the pid and the remaining 255 bytes for the hostname
-    match std::str::from_utf8(&buffer[3..]) {
-        Ok(s) => {
-            // Successfully converted to a string
-            println!("[dataplane] received hostname from dataplane: {}", s);
+fn on_receive_hostname(match_channel: Sender<String>) -> Box<dyn FnMut(&[u8]) -> i32> {
+    Box::new(move |buffer: &[u8]| -> i32 {
+        let send_ch = match_channel.clone();
+        // The layout is as follows: 4 bytes for the pid and the remaining 255 bytes for the hostname
+        match std::str::from_utf8(&buffer[3..]) {
+            Ok(s) => {
+                println!("[dataplane] received hostname from dataplane: {}", s);
+                let hostname = s.to_string();
+                thread::spawn(move || {
+                    // this will block until the previous message has been received
+                    let _ = send_ch.send(hostname);
+                });
+            }
+            Err(e) => {
+                println!("Error: {}", e);
+            }
         }
-        Err(e) => {
-            // Conversion failed due to invalid UTF-8 data
-            println!("Error: {}", e);
-        }
-    }
-    return 0;
+        0
+    })
 }
