@@ -1,5 +1,5 @@
 use crate::hash;
-use libbpf_rs::{Error, Map, MapFlags};
+use libbpf_rs::{Error, Map, MapCore, MapFlags};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::{collections::HashSet, fs::read_to_string, hash::Hash, io, path::Path};
@@ -82,14 +82,6 @@ impl Blocklist {
             .unwrap();
 
         Ok(Self::new(filename, rules))
-    }
-
-    pub fn from_url(url: &str) -> Result<Self, reqwest::Error> {
-        // TODO: fix this ugly unwrapping (PANIC)
-        let response = reqwest::blocking::get(url).unwrap().text()?;
-        let rules = read_blocklist_rules(&response);
-
-        Ok(Self::new(url, rules))
     }
 }
 

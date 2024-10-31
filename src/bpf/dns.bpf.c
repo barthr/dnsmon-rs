@@ -149,6 +149,8 @@ int dns(struct __sk_buff* skb)
 
     if (bpf_ringbuf_output(&dns_events, &ev, sizeof(ev), 0) < 0) {
         log_fmt("Failed sending hostname to user space %s!", ev.hostname);
+    } else {
+        log_fmt("Succesfully sent hostname to control plane; %s", ev.hostname);
     }
 
     return TC_PASS;
